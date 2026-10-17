@@ -1,0 +1,1190 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0d1216">
+<title>PasaQR Turbo</title>
+<style>
+/* Layout: herramienta de una columna; el emisor pasa a pantalla completa blanca; el receptor muestra cámara + métricas */
+:root{
+  --bg:#0d1216; --panel:#151c22; --panel2:#1b242b; --fg:#e7edf1; --muted:#8e9ba6; --line:#26323b;
+  --accent:#3fc1a8; --accent-fg:#04201a; --ok:#5fd27c; --warn:#f0b445; --bad:#ff7a66;
+  --f-ui:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --f-mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--fg);font:15px/1.45 var(--f-ui);
+  padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.wrap{max-width:620px;margin:0 auto;padding-block:14px 28px;display:flex;flex-direction:column;gap:14px}
+header{display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap}
+h1{font-size:21px;margin:0;letter-spacing:.2px}
+h1 em{font-style:normal;color:var(--accent)}
+.tag{font:11px var(--f-mono);color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+.seg{display:grid;grid-template-columns:1fr 1fr;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:4px;gap:4px}
+.seg button{border:0;background:transparent;color:var(--muted);font:600 15px var(--f-ui);padding:11px;border-radius:9px;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-fg)}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:12px}
+.lbl{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.file{display:flex;align-items:center;justify-content:center;border:1.5px dashed var(--line);border-radius:12px;padding:18px;text-align:center;cursor:pointer;color:var(--muted)}
+.file strong{color:var(--fg);display:block;word-break:break-all}
+input[type=file]{display:none}
+.grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+@media (max-width:420px){.grid3{grid-template-columns:1fr 1fr}.grid3>div:last-child{grid-column:1/-1}}
+select{width:100%;padding:10px;border-radius:10px;border:1px solid var(--line);background:var(--panel2);color:var(--fg);font:14px var(--f-ui)}
+.btn{border:0;border-radius:11px;padding:13px 16px;font:600 15px var(--f-ui);cursor:pointer;background:var(--accent);color:var(--accent-fg);width:100%}
+.btn.ghost{background:transparent;color:var(--fg);border:1px solid var(--line)}
+.btn:disabled{opacity:.45;cursor:default}
+.btn:focus-visible,.seg button:focus-visible,select:focus-visible,.file:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.est{font:13px var(--f-mono);color:var(--muted);font-variant-numeric:tabular-nums}
+.est b{color:var(--fg);font-weight:600}
+.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;font-variant-numeric:tabular-nums}
+@media (max-width:420px){.stats{grid-template-columns:1fr 1fr}}
+.stat{background:var(--panel2);border-radius:10px;padding:8px 10px}
+.stat b{display:block;font:600 16px var(--f-mono)}
+.stat small{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em}
+.cam{position:relative;border-radius:12px;overflow:hidden;background:#000;aspect-ratio:16/9}
+.cam video,.cam canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
+.cam .pill{position:absolute;left:10px;top:10px;font:600 12px var(--f-ui);padding:4px 9px;border-radius:99px;background:rgba(0,0,0,.6);color:#fff}
+.bar{height:8px;background:var(--panel2);border-radius:99px;overflow:hidden}
+.bar i{display:block;height:100%;width:0;background:var(--accent);transition:width .25s}
+.msg{font-size:14px;color:var(--muted);margin:0}
+.msg.ok{color:var(--ok)} .msg.bad{color:var(--bad)} .msg.warn{color:var(--warn)}
+.mono{font-family:var(--f-mono);font-size:13px;word-break:break-all}
+.help{font-size:13px;color:var(--muted);margin:0;padding-left:18px}
+.help li{margin-bottom:5px}
+.link{background:none;border:0;color:var(--accent);font:14px var(--f-ui);padding:0;cursor:pointer;text-align:left;text-decoration:underline}
+/* emisor a pantalla completa */
+#tx{position:fixed;inset:0;background:#fff;z-index:50;touch-action:none}
+#tx canvas{position:absolute;inset:0;width:100%;height:100%}
+#txBar{position:absolute;left:calc(8px + env(safe-area-inset-left,0px));top:50%;transform:translateY(-50%);width:128px;background:#eef1f3;color:#333;border-radius:10px;padding:10px;display:flex;flex-direction:column;gap:8px;font:12px var(--f-ui)}
+#txBar button{border:0;border-radius:8px;padding:8px 10px;font:600 13px var(--f-ui);cursor:pointer}
+#txBar .stop{background:#e8b4ab;color:#5a1308}
+#txBar .info{font-variant-numeric:tabular-nums;line-height:1.35}
+@media (prefers-reduced-motion:reduce){.bar i{transition:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>PasaQR <em>Turbo</em></h1>
+    <div class="tag">Código visual 16:9 · sin Wi-Fi ni Bluetooth</div>
+  </header>
+
+  <div class="seg" role="group" aria-label="Modo">
+    <button id="tabSend" aria-pressed="true">Enviar</button>
+    <button id="tabRecv" aria-pressed="false">Recibir</button>
+  </div>
+
+  <!-- ENVIAR -->
+  <section id="send" class="panel">
+    <label class="file" id="pick" tabindex="0" for="fileIn"><div id="pickTxt">Toca para elegir un archivo<br><small>Cualquier tipo: PDF, Excel, fotos, video…</small></div></label>
+    <input type="file" id="fileIn">
+    <div class="grid3">
+      <div><label class="lbl" for="dens">Densidad</label>
+        <select id="dens"><option value="0">Baja · 160×90</option><option value="1" selected>Media · 224×126</option><option value="2">Alta · 288×162</option></select></div>
+      <div><label class="lbl" for="cols">Colores</label>
+        <select id="cols"><option value="2" selected>2 · blanco y negro</option><option value="4">4 · más rápido</option></select></div>
+      <div><label class="lbl" for="fps">Cuadros/s</label>
+        <select id="fps"><option>4</option><option>6</option><option selected>8</option><option>10</option><option>12</option></select></div>
+    </div>
+    <div class="est" id="est">Elige un archivo para ver el tiempo estimado.</div>
+    <button class="btn" id="startBtn" disabled>Transmitir a pantalla completa</button>
+    <p class="msg">Pon el celular en horizontal y sube el brillo al máximo.</p>
+  </section>
+
+  <!-- RECIBIR -->
+  <section id="recv" class="panel" hidden>
+    <div class="cam" id="camBox" hidden>
+      <video id="cam" playsinline muted></video>
+      <canvas id="ov"></canvas>
+      <span class="pill" id="pill">Buscando…</span>
+    </div>
+    <button class="btn" id="camBtn">Abrir cámara y recibir</button>
+    <div id="rxInfo" hidden>
+      <div class="mono" id="rName">Esperando el nombre del archivo…</div>
+      <div class="bar" style="margin-top:8px"><i id="rBar"></i></div>
+      <div class="stats" style="margin-top:10px">
+        <div class="stat"><small>Avance</small><b id="sPct">0 %</b></div>
+        <div class="stat"><small>Bloques</small><b id="sBlk">0/?</b></div>
+        <div class="stat"><small>Velocidad</small><b id="sSpd">–</b></div>
+        <div class="stat"><small>Lecturas OK</small><b id="sRate">0/s</b></div>
+      </div>
+    </div>
+    <p class="msg" id="rMsg">Pon este celular también en horizontal, apoyado y quieto, a unos 15–25 cm de la pantalla del otro.</p>
+    <button class="btn" id="saveBtn" hidden>Guardar archivo</button>
+    <button class="btn ghost" id="shareBtn" hidden>Compartir / abrir con…</button>
+    <button class="btn ghost" id="resetBtn" hidden>Recibir otro archivo</button>
+    <button class="link" id="photoBtn">Probar lectura con una foto del código</button>
+    <input type="file" id="photoIn" accept="image/*">
+  </section>
+
+  <section class="panel">
+    <div class="lbl">Cómo usarla</div>
+    <ol class="help">
+      <li>Abre este mismo archivo en los dos celulares.</li>
+      <li>Emisor: elige el archivo y pulsa transmitir. La pantalla se pone blanca con el código cambiando.</li>
+      <li>Receptor: <b>Recibir</b>, apunta la cámara para que el marco negro completo quede dentro de la imagen.</li>
+      <li>No hace falta empezar al inicio ni leer todos los cuadros: cualquier cuadro sirve. Al 100 % pulsa <b>Guardar archivo</b>.</li>
+      <li>Si no avanza: baja la densidad, usa 2 colores o reduce los cuadros/s.</li>
+    </ol>
+  </section>
+</div>
+
+<div id="tx" hidden>
+  <canvas id="txc"></canvas>
+  <div id="txBar" hidden>
+    <span class="info" id="txInfo">–</span>
+    <button class="stop" id="txStop">Detener</button>
+  </div>
+</div>
+
+<script id="codecSrc">// PasaQR Turbo codec — código visual 16:9 para pantalla→cámara
+// Estructura del cuadro (en celdas): borde negro T, separación blanca G, zona de datos DC×DR.
+// Marcas de alineación 5×5 en retícula; datos con Reed-Solomon intercalado y blanqueo; códigos fuente LT entre cuadros.
+const PTC = (() => {
+'use strict';
+const T = 5, G = 1, MARGIN = 3;
+const PRESETS = [[160, 90], [224, 126], [288, 162]];
+const PRESET_NAMES = ['Baja', 'Media', 'Alta'];
+const SLOT_FR = 0.04;
+
+// ---------- GF(256) y Reed-Solomon ----------
+const EXP = new Uint8Array(512), LOG = new Uint8Array(256);
+{ let x = 1; for (let i = 0; i < 255; i++) { EXP[i] = x; LOG[x] = i; x <<= 1; if (x & 256) x ^= 0x11d; } for (let i = 255; i < 512; i++) EXP[i] = EXP[i - 255]; }
+const gmul = (a, b) => (a && b) ? EXP[LOG[a] + LOG[b]] : 0;
+const gdiv = (a, b) => a ? EXP[(LOG[a] + 255 - LOG[b]) % 255] : 0;
+const genCache = {};
+function rsGen(nsym) {
+  if (genCache[nsym]) return genCache[nsym];
+  let g = [1];
+  for (let i = 0; i < nsym; i++) {
+    const ng = new Array(g.length + 1).fill(0);
+    for (let j = 0; j < g.length; j++) { ng[j] ^= g[j]; ng[j + 1] ^= gmul(g[j], EXP[i]); }
+    g = ng;
+  }
+  return (genCache[nsym] = Uint8Array.from(g));
+}
+function rsEncode(msg, nsym) {
+  const g = rsGen(nsym), out = new Uint8Array(msg.length + nsym);
+  out.set(msg);
+  for (let i = 0; i < msg.length; i++) {
+    const c = out[i];
+    if (c) { const lc = LOG[c]; for (let j = 1; j < g.length; j++) if (g[j]) out[i + j] ^= EXP[LOG[g[j]] + lc]; }
+  }
+  out.set(msg);
+  return out;
+}
+function polyEvalLow(p, x) { let y = 0; for (let i = p.length - 1; i >= 0; i--) y = gmul(y, x) ^ p[i]; return y; }
+// corrige en sitio; devuelve nº de errores corregidos o -1
+function rsDecode(cw, nsym) {
+  const n = cw.length, S = new Uint8Array(nsym);
+  let any = 0;
+  for (let i = 0; i < nsym; i++) {
+    let y = 0; const la = i;
+    for (let j = 0; j < n; j++) y = (y ? EXP[LOG[y] + la] : 0) ^ cw[j];
+    S[i] = y; any |= y;
+  }
+  if (!any) return 0;
+  let C = [1], B = [1], L = 0, m = 1, b = 1;
+  for (let r = 0; r < nsym; r++) {
+    let d = S[r];
+    for (let i = 1; i <= L; i++) d ^= gmul(C[i] || 0, S[r - i]);
+    if (d === 0) { m++; continue; }
+    const coef = gdiv(d, b), Tm = C.slice();
+    while (C.length < B.length + m) C.push(0);
+    for (let i = 0; i < B.length; i++) C[i + m] ^= gmul(coef, B[i]);
+    if (2 * L <= r) { L = r + 1 - L; B = Tm; b = d; m = 1; } else m++;
+  }
+  C = C.slice(0, L + 1);
+  if (L * 2 > nsym) return -1;
+  const pos = [];
+  for (let p = 0; p < n; p++) if (polyEvalLow(C, EXP[(255 - p) % 255]) === 0) pos.push(p);
+  if (pos.length !== L) return -1;
+  const Om = new Uint8Array(nsym);
+  for (let i = 0; i < nsym; i++) { let v = 0; for (let j = 0; j <= Math.min(i, L); j++) v ^= gmul(C[j], S[i - j]); Om[i] = v; }
+  const D = []; for (let i = 1; i < C.length; i++) D.push(i & 1 ? C[i] : 0);
+  for (const p of pos) {
+    const X = EXP[p % 255], xi = EXP[(255 - p) % 255];
+    const den = polyEvalLow(D, xi); if (!den) return -1;
+    cw[n - 1 - p] ^= gdiv(gmul(X, polyEvalLow(Om, xi)), den);
+  }
+  return L;
+}
+
+// ---------- utilidades ----------
+const CRC_T = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+function crc32(u8, start = 0, end = u8.length) { let c = 0xFFFFFFFF; for (let i = start; i < end; i++) c = CRC_T[(c ^ u8[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+function mulberry32(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+const keyCache = {};
+function keystream(len) {
+  if (keyCache[len]) return keyCache[len];
+  const r = mulberry32(0x5EED1234), k = new Uint8Array(len);
+  for (let i = 0; i < len; i++) k[i] = (r() * 256) | 0;
+  return (keyCache[len] = k);
+}
+
+// ---------- disposición del cuadro ----------
+const layoutCache = {};
+function lattice(n, step) {
+  const cnt = Math.max(2, Math.round((n - 5) / step) + 1), out = [];
+  for (let i = 0; i < cnt; i++) out.push(Math.round(2 + i * (n - 5) / (cnt - 1)));
+  return out;
+}
+function layout(d, colors) {
+  const key = d + ':' + colors;
+  if (layoutCache[key]) return layoutCache[key];
+  const [DC, DR] = PRESETS[d];
+  const W = DC + 2 * (T + G), H = DR + 2 * (T + G);
+  const mxs = lattice(DC, 32), mys = lattice(DR, 32);
+  const mask = new Uint8Array(DC * DR); // 0 dato, 1 marca negra, 2 marca blanca
+  for (const cy of mys) for (const cx of mxs)
+    for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+      const ring = Math.max(Math.abs(dx), Math.abs(dy));
+      mask[(cy + dy) * DC + cx + dx] = ring === 1 ? 2 : 1;
+    }
+  const di = [];
+  for (let i = 0; i < DC * DR; i++) if (!mask[i]) di.push(i);
+  const dataIdx = Int32Array.from(di);
+  const bpc = colors === 4 ? 2 : 1;
+  const capBytes = Math.floor(dataIdx.length * bpc / 8);
+  const ncw = Math.ceil(capBytes / 255);
+  const n = Math.floor(capBytes / ncw);
+  const nsym = 2 * Math.round(n * 0.14);
+  const k = n - nsym;
+  const payloadLen = ncw * k, usedBytes = ncw * n;
+  const streamLen = Math.ceil(dataIdx.length * bpc / 8);
+  const slots = [];
+  for (let i = 0; i < 8; i++) { const x0 = Math.round(W * (0.2 + 0.075 * i)); slots.push([x0, x0 + Math.max(2, Math.round(W * SLOT_FR))]); }
+  const L = { d, colors, DC, DR, W, H, mxs, mys, mask, dataIdx, bpc, capBytes, ncw, n, nsym, k, payloadLen, usedBytes, streamLen, slots, blockSize: payloadLen - 18 };
+  return (layoutCache[key] = L);
+}
+function formatBits(d, colors) {
+  const d1 = (d >> 1) & 1, d0 = d & 1, c = colors === 4 ? 1 : 0;
+  return [1, 0, d1, d0, c, 1 - d1, 1 - d0, 1 - c];
+}
+
+// ---------- codificar un cuadro ----------
+// payload: Uint8Array(L.payloadLen). Devuelve RGBA W×H (1 px por celda).
+function encodeFrame(L, payload) {
+  const { ncw, n, k, nsym, streamLen } = L;
+  const stream = new Uint8Array(streamLen);
+  for (let j = 0; j < ncw; j++) {
+    const cw = rsEncode(payload.subarray(j * k, (j + 1) * k), nsym);
+    for (let i = 0; i < n; i++) stream[i * ncw + j] = cw[i];
+  }
+  const key = keystream(streamLen);
+  for (let i = 0; i < streamLen; i++) stream[i] ^= key[i];
+  const { W, H, DC, DR, mask, dataIdx, bpc } = L;
+  const img = new Uint8ClampedArray(W * H * 4).fill(255);
+  const set = (x, y, r, g, b) => { const o = (y * W + x) * 4; img[o] = r; img[o + 1] = g; img[o + 2] = b; };
+  const fb = formatBits(L.d, L.colors);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    if (x < T || x >= W - T || y < T || y >= H - T) {
+      let white = false;
+      if (y >= 2 && y < T && x >= T && x < W - T) for (let s = 0; s < 8; s++) if (fb[s] && x >= L.slots[s][0] && x < L.slots[s][1]) white = true;
+      if (!white) set(x, y, 0, 0, 0);
+    }
+  }
+  for (let i = 0; i < DC * DR; i++) if (mask[i] === 1) set(T + G + (i % DC), T + G + ((i / DC) | 0), 0, 0, 0);
+  let bit = 0;
+  for (let q = 0; q < dataIdx.length; q++) {
+    const i = dataIdx[q], x = T + G + (i % DC), y = T + G + ((i / DC) | 0);
+    if (bpc === 1) {
+      const v = (stream[bit >> 3] >> (7 - (bit & 7))) & 1; bit++;
+      if (!v) set(x, y, 0, 0, 0);
+    } else {
+      const b1 = (stream[bit >> 3] >> (7 - (bit & 7))) & 1; bit++;
+      const b0 = (stream[bit >> 3] >> (7 - (bit & 7))) & 1; bit++;
+      set(x, y, b1 ? 255 : 0, b0 ? 255 : 0, b1 ? 255 : 0);
+    }
+  }
+  return img;
+}
+
+// ---------- geometría ----------
+function solve8(A, bv) {
+  const n = 8, M = A.map((r, i) => [...r, bv[i]]);
+  for (let c = 0; c < n; c++) {
+    let p = c; for (let r = c + 1; r < n; r++) if (Math.abs(M[r][c]) > Math.abs(M[p][c])) p = r;
+    [M[c], M[p]] = [M[p], M[c]];
+    if (Math.abs(M[c][c]) < 1e-12) return null;
+    for (let r = 0; r < n; r++) if (r !== c) { const f = M[r][c] / M[c][c]; for (let k = c; k <= n; k++) M[r][k] -= f * M[c][k]; }
+  }
+  return M.map((r, i) => r[n] / r[i]);
+}
+function homography(src, dst) {
+  const A = [], b = [];
+  for (let i = 0; i < 4; i++) {
+    const [x, y] = src[i], [u, v] = dst[i];
+    A.push([x, y, 1, 0, 0, 0, -u * x, -u * y]); b.push(u);
+    A.push([0, 0, 0, x, y, 1, -v * x, -v * y]); b.push(v);
+  }
+  const h = solve8(A, b); if (!h) return null;
+  return [...h, 1];
+}
+function happly(h, x, y) { const w = h[6] * x + h[7] * y + 1; return [(h[0] * x + h[1] * y + h[2]) / w, (h[3] * x + h[4] * y + h[5]) / w]; }
+
+// imagen: {data,width,height}
+function makeSampler(img) {
+  const { data: D, width: w, height: h } = img, w4 = w * 4;
+  function px(x, y, c) {
+    if (x < 0 || y < 0 || x > w - 1.001 || y > h - 1.001) return 255;
+    const x0 = x | 0, y0 = y | 0, fx = x - x0, fy = y - y0, o = (y0 * w + x0) * 4 + c;
+    return (D[o] * (1 - fx) + D[o + 4] * fx) * (1 - fy) + (D[o + w4] * (1 - fx) + D[o + w4 + 4] * fx) * fy;
+  }
+  return {
+    w, h,
+    lum: (x, y) => (px(x, y, 0) * 77 + px(x, y, 1) * 150 + px(x, y, 2) * 29) / 256,
+    g: (x, y) => px(x, y, 1),
+    m: (x, y) => (px(x, y, 0) + px(x, y, 2)) / 2,
+  };
+}
+
+// ---------- localizar el marco ----------
+function findFrame(img) {
+  const { data, width: w, height: h } = img;
+  const s = Math.max(1, Math.ceil(Math.max(w, h) / 640)), sw = Math.floor(w / s), sh = Math.floor(h / s);
+  const sm = new Uint8Array(sw * sh);
+  for (let y = 0; y < sh; y++) for (let x = 0; x < sw; x++) {
+    let acc = 0;
+    const h1 = s >> 2, h2 = (3 * s) >> 2;
+    let o = ((y * s + h1) * w + x * s + h1) * 4; acc += data[o] * 77 + data[o + 1] * 150 + data[o + 2] * 29;
+    o = ((y * s + h1) * w + x * s + h2) * 4; acc += data[o] * 77 + data[o + 1] * 150 + data[o + 2] * 29;
+    o = ((y * s + h2) * w + x * s + h1) * 4; acc += data[o] * 77 + data[o + 1] * 150 + data[o + 2] * 29;
+    o = ((y * s + h2) * w + x * s + h2) * 4; acc += data[o] * 77 + data[o + 1] * 150 + data[o + 2] * 29;
+    sm[y * sw + x] = acc / 1024;
+  }
+  // Otsu sobre la zona central
+  const hist = new Float64Array(256); let tot = 0;
+  for (let y = (sh * 0.2) | 0; y < sh * 0.8; y++) for (let x = (sw * 0.2) | 0; x < sw * 0.8; x++) { hist[sm[y * sw + x]]++; tot++; }
+  let sum = 0; for (let i = 0; i < 256; i++) sum += i * hist[i];
+  let sB = 0, wB = 0, best = -1, thr = 128;
+  for (let i = 0; i < 256; i++) { wB += hist[i]; if (!wB) continue; const wF = tot - wB; if (!wF) break; sB += i * hist[i]; const mB = sB / wB, mF = (sum - sB) / wF, v = wB * wF * (mB - mF) * (mB - mF); if (v > best) { best = v; thr = i; } }
+  // máscara oscura erosionada (3×3): elimina las celdas de datos y deja el marco grueso
+  const dk = new Uint8Array(sw * sh);
+  for (let i = 0; i < sw * sh; i++) dk[i] = sm[i] <= thr ? 1 : 0;
+  const er = new Uint8Array(sw * sh);
+  for (let y = 1; y < sh - 1; y++) for (let x = 1; x < sw - 1; x++) {
+    const i = y * sw + x;
+    er[i] = dk[i] & dk[i - 1] & dk[i + 1] & dk[i - sw] & dk[i + sw] & dk[i - sw - 1] & dk[i - sw + 1] & dk[i + sw - 1] & dk[i + sw + 1];
+  }
+  for (let x = 0; x < sw; x++) { er[x] = dk[x]; er[(sh - 1) * sw + x] = dk[(sh - 1) * sw + x]; }
+  for (let y = 0; y < sh; y++) { er[y * sw] = dk[y * sw]; er[y * sw + sw - 1] = dk[y * sw + sw - 1]; }
+  // componentes oscuras
+  const lab = new Int32Array(sw * sh).fill(-1), comps = [], stack = new Int32Array(sw * sh);
+  for (let start = 0; start < sw * sh; start++) {
+    if (lab[start] !== -1 || !er[start]) continue;
+    const id = comps.length; let sp = 0; stack[sp++] = start; lab[start] = id;
+    const c = { id, n: 0, border: false, x0: 1e9, x1: -1, y0: 1e9, y1: -1, pp: -1e9, pm: 1e9, mp: -1e9, mm: 1e9, ipp: 0, ipm: 0, imp: 0, imm: 0 };
+    while (sp) {
+      const p = stack[--sp], x = p % sw, y = (p / sw) | 0; c.n++;
+      if (x === 0 || y === 0 || x === sw - 1 || y === sh - 1) c.border = true;
+      if (x < c.x0) c.x0 = x; if (x > c.x1) c.x1 = x; if (y < c.y0) c.y0 = y; if (y > c.y1) c.y1 = y;
+      const a = x + y, b = x - y;
+      if (a > c.pp) { c.pp = a; c.ipp = p; } if (a < c.pm) { c.pm = a; c.ipm = p; }
+      if (b > c.mp) { c.mp = b; c.imp = p; } if (b < c.mm) { c.mm = b; c.imm = p; }
+      if (x > 0 && lab[p - 1] === -1 && er[p - 1]) { lab[p - 1] = id; stack[sp++] = p - 1; }
+      if (x < sw - 1 && lab[p + 1] === -1 && er[p + 1]) { lab[p + 1] = id; stack[sp++] = p + 1; }
+      if (y > 0 && lab[p - sw] === -1 && er[p - sw]) { lab[p - sw] = id; stack[sp++] = p - sw; }
+      if (y < sh - 1 && lab[p + sw] === -1 && er[p + sw]) { lab[p + sw] = id; stack[sp++] = p + sw; }
+    }
+    comps.push(c);
+  }
+  const area = sw * sh, cx = sw / 2, cy = sh / 2;
+  let pick = null;
+  for (const c of comps) {
+    if (c.border) continue;
+    const bw = c.x1 - c.x0 + 1, bh = c.y1 - c.y0 + 1, ba = bw * bh;
+    if (ba < area * 0.06) continue;
+    const asp = Math.max(bw, bh) / Math.min(bw, bh);
+    if (asp < 1.15 || asp > 2.6) continue;
+    if (!(c.x0 < cx && c.x1 > cx && c.y0 < cy && c.y1 > cy)) continue;
+    if (!pick || ba < pick.ba) pick = Object.assign(c, { ba });
+  }
+  if (!pick) return null;
+  // contorno exterior: extremos por fila → envolvente convexa → cuadrilátero de área máxima
+  const pts = [];
+  for (let y = pick.y0; y <= pick.y1; y++) {
+    let a = -1, b = -1;
+    for (let x = pick.x0; x <= pick.x1; x++) if (lab[y * sw + x] === pick.id) { if (a < 0) a = x; b = x; }
+    if (a >= 0) { pts.push([a, y]); if (b !== a) pts.push([b + 1, y]); }
+  }
+  for (let x = pick.x0; x <= pick.x1; x++) {
+    let a = -1, b = -1;
+    for (let y = pick.y0; y <= pick.y1; y++) if (lab[y * sw + x] === pick.id) { if (a < 0) a = y; b = y; }
+    if (a >= 0) { pts.push([x, a]); pts.push([x, b + 1]); }
+  }
+  let hull = convexHull(pts);
+  if (hull.length > 72) { const st = hull.length / 72, hh = []; for (let i = 0; i < 72; i++) hh.push(hull[Math.floor(i * st)]); hull = hh; }
+  const quad = maxQuad(hull);
+  if (!quad) return null;
+  const sc = p => [p[0] * s + s / 2, p[1] * s + s / 2];
+  const qs = quad.map(sc);
+  // ordenar TL, TR, BR, BL en la imagen
+  const cxq = (qs[0][0] + qs[1][0] + qs[2][0] + qs[3][0]) / 4, cyq = (qs[0][1] + qs[1][1] + qs[2][1] + qs[3][1]) / 4;
+  qs.sort((a, b) => Math.atan2(a[1] - cyq, a[0] - cxq) - Math.atan2(b[1] - cyq, b[0] - cxq));
+  // atan2 ordena en sentido horario (y hacia abajo) empezando en ~-180°; rotar para que empiece en el de menor x+y
+  let k0 = 0; for (let i = 1; i < 4; i++) if (qs[i][0] + qs[i][1] < qs[k0][0] + qs[k0][1]) k0 = i;
+  return { corners: [0, 1, 2, 3].map(i => qs[(k0 + i) % 4]), s };
+}
+function convexHull(P) {
+  P = P.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const lo = [], up = [];
+  for (const p of P) { while (lo.length >= 2 && cr(lo[lo.length - 2], lo[lo.length - 1], p) <= 0) lo.pop(); lo.push(p); }
+  for (let i = P.length - 1; i >= 0; i--) { const p = P[i]; while (up.length >= 2 && cr(up[up.length - 2], up[up.length - 1], p) <= 0) up.pop(); up.push(p); }
+  up.pop(); lo.pop();
+  return lo.concat(up);
+}
+function maxQuad(H) {
+  const m = H.length; if (m < 4) return null;
+  const tri = (a, b, c) => Math.abs((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]));
+  let best = -1, res = null;
+  for (let i = 0; i < m; i++) for (let k = i + 2; k < m; k++) {
+    let b1 = -1, j1 = -1; for (let j = i + 1; j < k; j++) { const a = tri(H[i], H[j], H[k]); if (a > b1) { b1 = a; j1 = j; } }
+    let b2 = -1, l1 = -1; for (let l = k + 1; l < i + m; l++) { const a = tri(H[i], H[k], H[l % m]); if (a > b2) { b2 = a; l1 = l % m; } }
+    if (j1 < 0 || l1 < 0) continue;
+    if (b1 + b2 > best) { best = b1 + b2; res = [H[i], H[j1], H[k], H[l1]]; }
+  }
+  return res;
+}
+
+// afinar bordes con ajuste de rectas
+function refineCorners(S, q0, s) {
+  let q = q0, res = null;
+  for (let it = 0; it < 3; it++) {
+    const per = Math.hypot(q[1][0] - q[0][0], q[1][1] - q[0][1]) + Math.hypot(q[2][0] - q[1][0], q[2][1] - q[1][1]);
+    const nr = refineOnce(S, q, Math.max(6, per / (it === 0 ? 80 : 160)), Math.max(6, per / (it === 0 ? 70 : 160)), per / 25);
+    if (!nr) break;
+    res = nr; q = nr.q;
+  }
+  return res || { q: q0, curves: null };
+}
+function refineOnce(S, q, rIn, rOut, maxMove) {
+  const cx = (q[0][0] + q[1][0] + q[2][0] + q[3][0]) / 4, cy = (q[0][1] + q[1][1] + q[2][1] + q[3][1]) / 4;
+  const lines = [], curves = [];
+  for (let e = 0; e < 4; e++) {
+    const A = q[e], B = q[(e + 1) % 4];
+    const dx = B[0] - A[0], dy = B[1] - A[1], len = Math.hypot(dx, dy);
+    let nx = -dy / len, ny = dx / len;
+    const mx = (A[0] + B[0]) / 2, my = (A[1] + B[1]) / 2;
+    if ((mx - cx) * nx + (my - cy) * ny < 0) { nx = -nx; ny = -ny; }
+    const pts = [];
+    for (let t = 0.06; t <= 0.941; t += 0.03) {
+      const px = A[0] + dx * t, py = A[1] + dy * t;
+      const prof = []; let mn = 255, mxv = 0;
+      for (let o = -rIn; o <= rOut; o += 0.5) { const v = S.lum(px + nx * o, py + ny * o); prof.push(v); if (v < mn) mn = v; if (v > mxv) mxv = v; }
+      if (mxv - mn < 40) continue;
+      const mid = (mn + mxv) / 2;
+      // de todos los cruces oscuro→claro, el borde exterior es el seguido por la franja clara más larga (margen)
+      let k = -1, bestRun = 0;
+      for (let i = 0; i < prof.length - 1; i++) if (prof[i] <= mid && prof[i + 1] > mid) {
+        let j = i + 1; while (j < prof.length && prof[j] > mid) j++;
+        const run = j - i; if (run > bestRun) { bestRun = run; k = i; }
+      }
+      if (k < 0 || bestRun < 4) continue;
+      const f = (mid - prof[k]) / (prof[k + 1] - prof[k]);
+      const o = -rIn + (k + f) * 0.5;
+      pts.push([px + nx * o, py + ny * o, t]);
+    }
+    if (pts.length < 10) { return null; }
+    const ln = fitLine(pts);
+    lines.push(ln);
+    const rs = pts.map(p => [p[2], (p[0] - ln.mx) * nx + (p[1] - ln.my) * ny]);
+    curves.push({ nx, ny, coef: quadFit(rs) });
+  }
+  const out = [];
+  for (let i = 0; i < 4; i++) {
+    const p = intersect(lines[(i + 3) % 4], lines[i]);
+    if (!p || Math.hypot(p[0] - q[i][0], p[1] - q[i][1]) > maxMove) { return null; }
+    out.push(p);
+  }
+  return { q: out, curves };
+}
+function quadFit(rs) {
+  // mínimos cuadrados y = a + b t + c t²
+  let S0 = 0, S1 = 0, S2 = 0, S3 = 0, S4 = 0, Y0 = 0, Y1 = 0, Y2 = 0;
+  for (const [t, y] of rs) { const t2 = t * t; S0++; S1 += t; S2 += t2; S3 += t2 * t; S4 += t2 * t2; Y0 += y; Y1 += y * t; Y2 += y * t2; }
+  const M = [[S0, S1, S2], [S1, S2, S3], [S2, S3, S4]], v = [Y0, Y1, Y2];
+  const det3 = m => m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1]) - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0]) + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
+  const D = det3(M); if (Math.abs(D) < 1e-12) return [0, 0, 0];
+  const sol = [0, 1, 2].map(k => det3(M.map((row, i) => row.map((x, j) => j === k ? v[i] : x))) / D);
+  // residuo respecto a la recta (sin componente lineal: la recta ya la absorbe)
+  return sol;
+}
+function fitLine(pts) {
+  let use = pts;
+  for (let it = 0; it < 3; it++) {
+    let mx = 0, my = 0; for (const p of use) { mx += p[0]; my += p[1]; } mx /= use.length; my /= use.length;
+    let sxx = 0, sxy = 0, syy = 0; for (const p of use) { const a = p[0] - mx, b = p[1] - my; sxx += a * a; sxy += a * b; syy += b * b; }
+    const th = 0.5 * Math.atan2(2 * sxy, sxx - syy), dx = Math.cos(th), dy = Math.sin(th);
+    const line = { mx, my, dx, dy };
+    if (it === 2) return line;
+    const res = pts.map(p => Math.abs((p[0] - mx) * dy - (p[1] - my) * dx));
+    const sorted = [...res].sort((a, b) => a - b), med = sorted[sorted.length >> 1];
+    const keep = pts.filter((p, i) => res[i] <= Math.max(1.0, 2.5 * med));
+    if (keep.length >= 6) use = keep;
+  }
+}
+function intersect(l1, l2) {
+  const det = l1.dx * l2.dy - l1.dy * l2.dx; if (Math.abs(det) < 1e-9) return null;
+  const t = ((l2.mx - l1.mx) * l2.dy - (l2.my - l1.my) * l2.dx) / det;
+  return [l1.mx + l1.dx * t, l1.my + l1.dy * t];
+}
+
+// Lee la franja de formato midiendo el grosor del borde superior: muesca = borde fino.
+function readFormat(S, q, curves, e, dbgOut) {
+  const A = q[e], B = q[(e + 1) % 4];
+  const dx = B[0] - A[0], dy = B[1] - A[1], len = Math.hypot(dx, dy);
+  const cv = curves ? curves[e] : null;
+  let nx = -dy / len, ny = dx / len;
+  const cx = (q[0][0] + q[1][0] + q[2][0] + q[3][0]) / 4, cy = (q[0][1] + q[1][1] + q[2][1] + q[3][1]) / 4;
+  if (((A[0] + B[0]) / 2 - cx) * nx + ((A[1] + B[1]) / 2 - cy) * ny < 0) { nx = -nx; ny = -ny; }
+  const cellMax = len / (PRESETS[0][0] + 2 * (T + G));
+  const run = t => {
+    const d = cv ? cv.coef[0] + cv.coef[1] * t + cv.coef[2] * t * t : 0;
+    const px = A[0] + dx * t + nx * d, py = A[1] + dy * t + ny * d;
+    const prof = []; let mn = 255, mx = 0;
+    for (let o = cellMax * 1.5; o >= -cellMax * (T + 4); o -= 0.5) { const v = S.lum(px + nx * o, py + ny * o); prof.push(v); if (v < mn) mn = v; if (v > mx) mx = v; }
+    if (mx - mn < 30) return -1;
+    const mid = (mn + mx) / 2;
+    let i = 0; while (i < prof.length && prof[i] > mid) i++;
+    const enter = i; while (i < prof.length && prof[i] <= mid) i++;
+    if (i >= prof.length) return -1;
+    return (i - enter) * 0.5;
+  };
+  const refs = [0.07, 0.1, 0.13, 0.16, 0.84, 0.87, 0.9, 0.93].map(run).filter(v => v > 0);
+  if (refs.length < 4) return null;
+  const ref = median(refs);
+  const bits = [];
+  for (let sI = 0; sI < 8; sI++) {
+    const t0 = 0.2 + 0.075 * sI, w = SLOT_FR;
+    const rr = [0.3, 0.5, 0.7].map(f => run(t0 + w * f)).filter(v => v > 0);
+    if (!rr.length) return null;
+    bits.push(median(rr) < 0.65 * ref ? 1 : 0);
+  }
+  if (dbgOut) dbgOut.push({ e, ref, bits });
+  return bits;
+}
+
+// ---------- decodificar una imagen ----------
+function decode(img, dbg) {
+  const S = makeSampler(img);
+  const f = findFrame(img);
+  if (!f) return { ok: false, reason: 'marco' };
+  const rf = refineCorners(S, f.corners, f.s), q = rf.q;
+  if (dbg) { dbg.rf = rf; dbg.f = f; }
+  const top = Math.hypot(q[1][0] - q[0][0], q[1][1] - q[0][1]), side = Math.hypot(q[2][0] - q[1][0], q[2][1] - q[1][1]);
+  const orients = top >= side ? [[0, 1, 2, 3], [2, 3, 0, 1]] : [[1, 2, 3, 0], [3, 0, 1, 2]];
+  let L = null, Hm = null, corners = null, orient = null;
+  for (const o of orients) {
+    const bits = readFormat(S, q, rf.curves, o[0], dbg && (dbg.fmt = dbg.fmt || []));
+    if (!bits) continue;
+    if (bits[0] !== 1 || bits[1] !== 0 || bits[2] === bits[5] || bits[3] === bits[6] || bits[4] === bits[7]) continue;
+    const d = bits[2] * 2 + bits[3];
+    if (d > 2) continue;
+    const cq = o.map(i => q[i]);
+    L = layout(d, bits[4] ? 4 : 2);
+    Hm = homography([[0, 0], [L.W, 0], [L.W, L.H], [0, L.H]], cq);
+    if (!Hm) { L = null; continue; }
+    corners = cq; orient = o; break;
+  }
+  if (!L) return { ok: false, reason: 'formato', quad: q };
+  // modelo: homografía + corrección de curvatura de los cuatro bordes (parche de Coons)
+  const cvs = rf.curves;
+  const D = (e, t) => { if (!cvs) return [0, 0]; const c = cvs[e]; const d = c.coef[0] + c.coef[1] * t + c.coef[2] * t * t; return [c.nx * d, c.ny * d]; };
+  const warp = (x, y) => {
+    const p = happly(Hm, x, y);
+    if (!cvs) return p;
+    const u = Math.min(1, Math.max(0, x / L.W)), v = Math.min(1, Math.max(0, y / L.H));
+    const a = D(orient[0], u), b = D(orient[1], v), c = D(orient[2], 1 - u), d = D(orient[3], 1 - v);
+    p[0] += (1 - v) * a[0] + u * b[0] + v * c[0] + (1 - u) * d[0];
+    p[1] += (1 - v) * a[1] + u * b[1] + v * c[1] + (1 - u) * d[1];
+    return p;
+  };
+  // marcas de alineación
+  const off0 = T + G + 0.5;
+  const nx = L.mxs.length, ny = L.mys.length;
+  const P = [];
+  const offs = [];
+  for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+    const X = off0 + L.mxs[i], Y = off0 + L.mys[j];
+    const c = warp(X, Y), ux0 = warp(X + 1, Y), uy0 = warp(X, Y + 1);
+    const ux = [ux0[0] - c[0], ux0[1] - c[1]], uy = [uy0[0] - c[0], uy0[1] - c[1]];
+    const cell = Math.hypot(...ux);
+    const R = Math.ceil(cell * 1.1 + 3);
+    const score = (dx, dy) => {
+      let acc = 0;
+      for (let ty = -2; ty <= 2; ty++) for (let tx = -2; tx <= 2; tx++) {
+        const ring = Math.max(Math.abs(tx), Math.abs(ty));
+        const wgt = ring === 1 ? 1 : (ring === 0 ? -2 : -0.375);
+        acc += wgt * S.lum(c[0] + dx + tx * ux[0] + ty * uy[0], c[1] + dy + tx * ux[1] + ty * uy[1]);
+      }
+      return acc;
+    };
+    let best = -1e18, bx = 0, by = 0;
+    for (let dy = -R; dy <= R; dy += 2) for (let dx = -R; dx <= R; dx += 2) { const v = score(dx, dy); if (v > best) { best = v; bx = dx; by = dy; } }
+    const cx0 = bx, cy0 = by;
+    for (let dy = cy0 - 1; dy <= cy0 + 1; dy++) for (let dx = cx0 - 1; dx <= cx0 + 1; dx++) { if (dx === cx0 && dy === cy0) continue; const v = score(dx, dy); if (v > best) { best = v; bx = dx; by = dy; } }
+    const sub = (a, b0, c0) => { const den = a - 2 * b0 + c0; return den < 0 ? Math.max(-0.5, Math.min(0.5, 0.5 * (a - c0) / den)) : 0; };
+    const fx = sub(score(bx - 1, by), best, score(bx + 1, by)), fy = sub(score(bx, by - 1), best, score(bx, by + 1));
+    // calidad: correlación normalizada con el patrón ideal
+    let mn = 255, mx = 0;
+    for (let ty = -2; ty <= 2; ty++) for (let tx = -2; tx <= 2; tx++) { const v = S.lum(c[0] + bx + tx * ux[0] + ty * uy[0], c[1] + by + tx * ux[1] + ty * uy[1]); if (v < mn) mn = v; if (v > mx) mx = v; }
+    const qual = mx - mn > 20 ? best / (8 * (mx - mn)) : 0;
+    const o = [bx + fx, by + fy, cell]; o.q = qual;
+    offs.push(o);
+    if (dbg) (dbg.mk = dbg.mk || []).push({ pred: [c[0], c[1]], X, Y, best });
+    P.push([c[0], c[1]]);
+  }
+  // filtrar marcas atípicas con la mediana de vecinas
+  for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+    const o = offs[j * nx + i];
+    o.fix = null;
+    const nb = [];
+    for (let b = -1; b <= 1; b++) for (let a = -1; a <= 1; a++) { if (!a && !b) continue; const ii = i + a, jj = j + b; if (ii >= 0 && jj >= 0 && ii < nx && jj < ny && offs[jj * nx + ii].q >= 0.45) nb.push(offs[jj * nx + ii]); }
+    if (!nb.length) continue;
+    const mdx = median(nb.map(v => v[0])), mdy = median(nb.map(v => v[1]));
+    if (o.q < 0.45 || Math.hypot(o[0] - mdx, o[1] - mdy) > 1.2 * o[2]) o.fix = [mdx, mdy];
+  }
+  for (let k = 0; k < P.length; k++) { const o = offs[k], v = o.fix || o; P[k][0] += v[0]; P[k][1] += v[1]; }
+  if (dbg) dbg.found = P.map(p => p.slice());
+  // muestrear celdas por interpolación bilineal entre marcas
+  const X = L.mxs.map(v => v + 0.5), Y = L.mys.map(v => v + 0.5);
+  const DC = L.DC, DR = L.DR, nd = L.dataIdx.length, ch = L.colors === 4 ? 2 : 1;
+  // retícula extendida (nx+2)×(ny+2) con puntos virtuales para Catmull-Rom
+  const ex = nx + 2, ey = ny + 2, EXg = new Float64Array(ex * ey), EYg = new Float64Array(ex * ey);
+  const at = (i, j) => P[j * nx + i];
+  for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) { EXg[(j + 1) * ex + i + 1] = at(i, j)[0]; EYg[(j + 1) * ex + i + 1] = at(i, j)[1]; }
+  for (let j = 1; j <= ny; j++) { const r = j * ex; EXg[r] = 2 * EXg[r + 1] - EXg[r + 2]; EYg[r] = 2 * EYg[r + 1] - EYg[r + 2]; EXg[r + ex - 1] = 2 * EXg[r + ex - 2] - EXg[r + ex - 3]; EYg[r + ex - 1] = 2 * EYg[r + ex - 2] - EYg[r + ex - 3]; }
+  for (let i = 0; i < ex; i++) { EXg[i] = 2 * EXg[ex + i] - EXg[2 * ex + i]; EYg[i] = 2 * EYg[ex + i] - EYg[2 * ex + i]; const l = (ey - 1) * ex; EXg[l + i] = 2 * EXg[l - ex + i] - EXg[l - 2 * ex + i]; EYg[l + i] = 2 * EYg[l - ex + i] - EYg[l - 2 * ex + i]; }
+  const seg = (arr, v) => { let i = 0; while (i < arr.length - 2 && v > arr[i + 1]) i++; return i; };
+  const cr = t => { const t2 = t * t, t3 = t2 * t; return [(-t3 + 2 * t2 - t) / 2, (3 * t3 - 5 * t2 + 2) / 2, (-3 * t3 + 4 * t2 + t) / 2, (t3 - t2) / 2]; };
+  const colI = new Int32Array(DC), colW = [], rowI = new Int32Array(DR), rowW = [];
+  for (let c = 0; c < DC; c++) { const i = seg(X, c + 0.5); colI[c] = i; colW.push(cr((c + 0.5 - X[i]) / (X[i + 1] - X[i]))); }
+  for (let r = 0; r < DR; r++) { const i = seg(Y, r + 0.5); rowI[r] = i; rowW.push(cr((r + 0.5 - Y[i]) / (Y[i + 1] - Y[i]))); }
+  const GX = new Float32Array(DC * DR), GY = new Float32Array(DC * DR);
+  for (let r = 0; r < DR; r++) {
+    const j = rowI[r], wy = rowW[r];
+    for (let c = 0; c < DC; c++) {
+      const i = colI[c], wx = colW[c];
+      let gx = 0, gy = 0;
+      for (let b = 0; b < 4; b++) { const rr = (j + b) * ex + i; for (let a = 0; a < 4; a++) { const w2 = wx[a] * wy[b]; gx += w2 * EXg[rr + a]; gy += w2 * EYg[rr + a]; } }
+      GX[r * DC + c] = gx; GY[r * DC + c] = gy;
+    }
+  }
+  // muestrear todas las celdas
+  const N = DC * DR, raw = [new Float32Array(N), ch === 2 ? new Float32Array(N) : null];
+  const qd = 0.22;
+  const f0 = ch === 1 ? S.lum : S.g;
+  for (let id = 0; id < N; id++) {
+    const c = id % DC, x0 = GX[id], y0 = GY[id];
+    const sx = c + 1 < DC ? 1 : -1, sy = id + DC < N ? 1 : -1;
+    const uxx = (GX[id + sx] - x0) * sx * qd, uxy = (GY[id + sx] - y0) * sx * qd;
+    const uyx = (GX[id + sy * DC] - x0) * sy * qd, uyy = (GY[id + sy * DC] - y0) * sy * qd;
+    raw[0][id] = (f0(x0, y0) + f0(x0 + uxx, y0 + uxy) + f0(x0 - uxx, y0 - uxy) + f0(x0 + uyx, y0 + uyy) + f0(x0 - uyx, y0 - uyy)) / 5;
+    if (ch === 2) raw[1][id] = (S.m(x0, y0) + S.m(x0 + uxx, y0 + uxy) + S.m(x0 - uxx, y0 - uxy) + S.m(x0 + uyx, y0 + uyy) + S.m(x0 - uyx, y0 - uyy)) / 5;
+  }
+  // compensar la mezcla con celdas vecinas (desenfoque)
+  const beta = dbg && dbg.beta != null ? dbg.beta : 1.4;
+  const vals = [new Float32Array(nd), ch === 2 ? new Float32Array(nd) : null];
+  for (let k2 = 0; k2 < ch; k2++) {
+    const R0 = raw[k2], V = vals[k2];
+    for (let q2 = 0; q2 < nd; q2++) {
+      const id = L.dataIdx[q2], c = id % DC, r = (id / DC) | 0;
+      let sum = 0, n4 = 0;
+      if (c > 0) { sum += R0[id - 1]; n4++; } if (c < DC - 1) { sum += R0[id + 1]; n4++; }
+      if (r > 0) { sum += R0[id - DC]; n4++; } if (r < DR - 1) { sum += R0[id + DC]; n4++; }
+      V[q2] = R0[id] + beta * (R0[id] - sum / n4);
+    }
+  }
+  // umbral por bloques de 16×16 celdas
+  const BS = 16, bx = Math.ceil(L.DC / BS), by = Math.ceil(L.DR / BS);
+  const thr = [new Float32Array(bx * by), new Float32Array(bx * by)], cnt = new Float32Array(bx * by);
+  for (let q2 = 0; q2 < nd; q2++) {
+    const id = L.dataIdx[q2], b = ((((id / L.DC) | 0) / BS) | 0) * bx + (((id % L.DC) / BS) | 0);
+    thr[0][b] += vals[0][q2]; if (ch === 2) thr[1][b] += vals[1][q2]; cnt[b]++;
+  }
+  for (let b = 0; b < bx * by; b++) { thr[0][b] /= cnt[b] || 1; thr[1][b] /= cnt[b] || 1; }
+  const stream = new Uint8Array(L.streamLen);
+  let bit = 0;
+  const put = v => { if (v) stream[bit >> 3] |= 1 << (7 - (bit & 7)); bit++; };
+  for (let q2 = 0; q2 < nd; q2++) {
+    const id = L.dataIdx[q2], b = ((((id / L.DC) | 0) / BS) | 0) * bx + (((id % L.DC) / BS) | 0);
+    if (ch === 1) put(vals[0][q2] > thr[0][b]);
+    else { put(vals[1][q2] > thr[1][b]); put(vals[0][q2] > thr[0][b]); }
+  }
+  const key = keystream(L.streamLen);
+  for (let i = 0; i < L.streamLen; i++) stream[i] ^= key[i];
+  if (dbg) { dbg.stream = stream.slice(); dbg.vals = vals; dbg.L = L; }
+  const payload = new Uint8Array(L.payloadLen), cw = new Uint8Array(L.n);
+  let fixed = 0;
+  for (let j = 0; j < L.ncw; j++) {
+    for (let i = 0; i < L.n; i++) cw[i] = stream[i * L.ncw + j];
+    const e = rsDecode(cw, L.nsym);
+    if (e < 0) return { ok: false, reason: 'errores', quad: corners, L, markers: P };
+    fixed += e;
+    payload.set(cw.subarray(0, L.k), j * L.k);
+  }
+  const pl = L.payloadLen;
+  const crc = (payload[pl - 4] << 24 | payload[pl - 3] << 16 | payload[pl - 2] << 8 | payload[pl - 1]) >>> 0;
+  if (crc !== crc32(payload, 0, pl - 4)) return { ok: false, reason: 'crc', quad: corners, L };
+  return { ok: true, payload, L, fixed, quad: corners, markers: P };
+}
+function median(a) { if (!a.length) return 0; const s = [...a].sort((x, y) => x - y); return s[s.length >> 1]; }
+
+// ---------- encabezado de cuadro ----------
+// [0x50 0x54][fileId u32][K u32][seq u32] datos(B) [crc32]
+function packFrame(L, fileId, K, seq, block) {
+  const p = new Uint8Array(L.payloadLen);
+  p[0] = 0x50; p[1] = 0x54;
+  const dv = new DataView(p.buffer);
+  dv.setUint32(2, fileId); dv.setUint32(6, K); dv.setUint32(10, seq);
+  p.set(block, 14);
+  dv.setUint32(L.payloadLen - 4, crc32(p, 0, L.payloadLen - 4));
+  return p;
+}
+function unpackFrame(L, p) {
+  if (p[0] !== 0x50 || p[1] !== 0x54) return null;
+  const dv = new DataView(p.buffer, p.byteOffset);
+  return { fileId: dv.getUint32(2), K: dv.getUint32(6), seq: dv.getUint32(10), block: p.subarray(14, 14 + L.blockSize), B: L.blockSize };
+}
+
+// ---------- código fuente sistemático por generaciones ----------
+// Primero se envía cada bloque tal cual (seq < K). Después, cuadros de reparación: cada uno es la suma XOR
+// de una mitad aleatoria de los bloques de una generación (≤256 bloques), en turno rotativo.
+// El receptor resuelve cada generación por eliminación gaussiana con ~2 cuadros extra.
+function genSize(K) { const NG = Math.ceil(K / 256); return Math.ceil(K / NG); }
+const orderCache = {};
+function sysOrder(K) {
+  // orden del primer pase intercalado entre generaciones: así lo perdido se reparte parejo
+  if (orderCache[K]) return orderCache[K];
+  const G = genSize(K), NG = Math.ceil(K / G), o = new Int32Array(K); let n = 0;
+  for (let j = 0; j < G; j++) for (let g = 0; g < NG; g++) { const i = g * G + j; if (i < K) o[n++] = i; }
+  return (orderCache[K] = o);
+}
+function symbolIndices(fileId, K, seq) {
+  if (seq < K) return [sysOrder(K)[seq]];
+  const G = genSize(K), NG = Math.ceil(K / G), r = seq - K, g = r % NG;
+  const a = g * G, b = Math.min(K, a + G);
+  const rnd = mulberry32((fileId ^ Math.imul(seq, 2654435761)) >>> 0);
+  const out = [];
+  for (let i = a; i < b; i++) if (rnd() < 0.5) out.push(i);
+  if (!out.length) out.push(a + ((rnd() * (b - a)) | 0));
+  return out;
+}
+function makeSymbol(blocks, B, idx) {
+  const out = new Uint8Array(B);
+  for (const i of idx) { const b = blocks[i]; for (let k = 0; k < B; k++) out[k] ^= b[k]; }
+  return out;
+}
+class LTDecoder {
+  constructor(K, B) {
+    this.K = K; this.B = B; this.G = genSize(K); this.NG = Math.ceil(K / this.G);
+    this.blocks = new Array(K).fill(null); this.known = 0; this.seen = new Set(); this.adj = new Map();
+    this.rows = Array.from({ length: this.NG }, () => new Set()); this.lastTry = new Int32Array(this.NG).fill(-99);
+  }
+  add(fileId, seq, data) {
+    if (this.seen.has(seq) || this.known === this.K) return false;
+    this.seen.add(seq);
+    const idx = symbolIndices(fileId, this.K, seq);
+    const d = data.slice(), rest = [];
+    for (const i of idx) { if (this.blocks[i]) xorInto(d, this.blocks[i]); else rest.push(i); }
+    if (!rest.length) return false;
+    if (rest.length === 1) { this._recover(rest[0], d); return true; }
+    const sym = { idx: new Set(rest), data: d, g: (rest[0] / this.G) | 0 };
+    for (const i of rest) { if (!this.adj.has(i)) this.adj.set(i, []); this.adj.get(i).push(sym); }
+    this.rows[sym.g].add(sym);
+    return true;
+  }
+  _recover(i0, d0) {
+    const queue = [[i0, d0]];
+    while (queue.length) {
+      const [i, d] = queue.pop();
+      if (this.blocks[i]) continue;
+      this.blocks[i] = d; this.known++;
+      const list = this.adj.get(i); this.adj.delete(i);
+      if (!list) continue;
+      for (const sym of list) {
+        if (!sym.idx.has(i)) continue;
+        sym.idx.delete(i); xorInto(sym.data, d);
+        if (sym.idx.size <= 1) {
+          this.rows[sym.g].delete(sym);
+          if (sym.idx.size === 1) { const j = sym.idx.values().next().value; sym.idx.clear(); if (!this.blocks[j]) queue.push([j, sym.data]); }
+        }
+      }
+    }
+  }
+  get done() { return this.known === this.K; }
+  // avance estimado: bloques conocidos + ecuaciones pendientes útiles (máx. lo que falta en cada generación)
+  progress() {
+    let p = this.known;
+    for (let g = 0; g < this.NG; g++) {
+      const a = g * this.G, b = Math.min(this.K, a + this.G);
+      let miss = 0; for (let i = a; i < b; i++) if (!this.blocks[i]) miss++;
+      p += Math.min(miss, this.rows[g].size);
+    }
+    return p;
+  }
+  // eliminación gaussiana sobre GF(2) por generación, cuando hay suficientes ecuaciones
+  tryEliminate() {
+    let any = false;
+    for (let g = 0; g < this.NG; g++) {
+      const set = this.rows[g];
+      if (!set.size) continue;
+      const a = g * this.G, b = Math.min(this.K, a + this.G);
+      const U = []; for (let i = a; i < b; i++) if (!this.blocks[i]) U.push(i);
+      const u = U.length;
+      if (!u || set.size < u || set.size < this.lastTry[g] + 2) continue;
+      this.lastTry[g] = set.size;
+      if (this._solve(g, U)) any = true;
+    }
+    return any;
+  }
+  _solve(g, U) {
+    const u = U.length, col = new Map(); U.forEach((v, i) => col.set(v, i));
+    const words = (u + 31) >> 5, BW = (this.B + 3) >> 2, rows = [];
+    for (const sym of this.rows[g]) {
+      if (sym.idx.size < 2) continue;
+      const bits = new Uint32Array(words);
+      for (const i of sym.idx) { const c = col.get(i); bits[c >> 5] |= 1 << (c & 31); }
+      const pay = new Uint32Array(BW); new Uint8Array(pay.buffer).set(sym.data);
+      rows.push({ bits, pay });
+    }
+    if (rows.length < u) return false;
+    let r0 = 0; const piv = new Int32Array(u);
+    for (let c = 0; c < u; c++) {
+      const w = c >> 5, m = 1 << (c & 31);
+      let p = -1; for (let r = r0; r < rows.length; r++) if (rows[r].bits[w] & m) { p = r; break; }
+      if (p < 0) return false;
+      const tmp = rows[r0]; rows[r0] = rows[p]; rows[p] = tmp;
+      const R = rows[r0];
+      for (let r = 0; r < rows.length; r++) if (r !== r0 && (rows[r].bits[w] & m)) {
+        const X = rows[r];
+        for (let k = w; k < words; k++) X.bits[k] ^= R.bits[k];
+        const xp = X.pay, rp = R.pay; for (let k = 0; k < BW; k++) xp[k] ^= rp[k];
+      }
+      piv[c] = r0++;
+    }
+    for (let c = 0; c < u; c++) {
+      const i = U[c];
+      if (!this.blocks[i]) { this.blocks[i] = new Uint8Array(rows[piv[c]].pay.buffer, 0, this.B).slice(); this.known++; }
+      const list = this.adj.get(i); this.adj.delete(i);
+      if (list) for (const sym of list) sym.idx.delete(i);
+    }
+    this.rows[g].clear();
+    return true;
+  }
+}
+function xorInto(a, b) { for (let k = 0; k < a.length; k++) a[k] ^= b[k]; }
+
+// ---------- empaquetar archivo ----------
+// flujo = [u32 lenMeta][meta JSON][datos]
+function buildStream(metaObj, data) {
+  const meta = new TextEncoder().encode(JSON.stringify(metaObj));
+  const out = new Uint8Array(4 + meta.length + data.length);
+  new DataView(out.buffer).setUint32(0, meta.length);
+  out.set(meta, 4); out.set(data, 4 + meta.length);
+  return out;
+}
+function splitStream(stream, B) {
+  const K = Math.max(1, Math.ceil(stream.length / B)), blocks = [];
+  for (let i = 0; i < K; i++) { const b = new Uint8Array(B); b.set(stream.subarray(i * B, (i + 1) * B)); blocks.push(b); }
+  return blocks;
+}
+function joinStream(blocks, B) {
+  const all = new Uint8Array(blocks.length * B);
+  blocks.forEach((b, i) => all.set(b, i * B));
+  const ml = new DataView(all.buffer).getUint32(0);
+  const meta = JSON.parse(new TextDecoder().decode(all.subarray(4, 4 + ml)));
+  return { meta, data: all.subarray(4 + ml, 4 + ml + meta.l) };
+}
+function peekMeta(block0) {
+  try { const ml = new DataView(block0.buffer, block0.byteOffset).getUint32(0); if (ml > block0.length - 4) return null; return JSON.parse(new TextDecoder().decode(block0.subarray(4, 4 + ml))); } catch (_) { return null; }
+}
+
+return { T, G, MARGIN, PRESETS, PRESET_NAMES, layout, encodeFrame, decode, packFrame, unpackFrame, symbolIndices, makeSymbol, LTDecoder, buildStream, splitStream, joinStream, peekMeta, crc32, rsEncode, rsDecode, homography, happly };
+})();
+if (typeof module !== 'undefined') module.exports = PTC;
+</script>
+<script>
+(() => {
+const $ = id => document.getElementById(id);
+const codecSrc = $('codecSrc').textContent;
+function fmtBytes(n){return n<1024?n+' B':n<1048576?(n/1024).toFixed(1)+' KB':(n/1048576).toFixed(2)+' MB';}
+function fmtTime(s){s=Math.max(1,Math.round(s));if(s<60)return s+' s';const m=Math.floor(s/60);if(m<60)return m+' min '+(s%60)+' s';return Math.floor(m/60)+' h '+(m%60)+' min';}
+async function through(u8, ts){return new Uint8Array(await new Response(new Blob([u8]).stream().pipeThrough(ts)).arrayBuffer());}
+const canZip = typeof CompressionStream!=='undefined';
+
+function setTab(m){
+  $('tabSend').setAttribute('aria-pressed', m==='send'); $('tabRecv').setAttribute('aria-pressed', m==='recv');
+  $('send').hidden = m!=='send'; $('recv').hidden = m!=='recv';
+  if (m!=='recv') stopCam();
+}
+$('tabSend').onclick=()=>setTab('send'); $('tabRecv').onclick=()=>setTab('recv');
+
+// ======================= EMISOR =======================
+let file=null, tx=null, wake=null;
+$('pick').onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();$('fileIn').click();}};
+$('fileIn').onchange=e=>{
+  file=e.target.files[0]||null; if(!file) return;
+  $('pickTxt').innerHTML='<strong></strong><small>'+fmtBytes(file.size)+'</small>';
+  $('pickTxt').querySelector('strong').textContent=file.name;
+  $('startBtn').disabled=false; updEst();
+};
+['dens','cols','fps'].forEach(id=>$(id).onchange=updEst);
+function curLayout(){return PTC.layout(+$('dens').value, +$('cols').value);}
+function updEst(){
+  if(!file){return;}
+  const L=curLayout(), fps=+$('fps').value, K=Math.ceil((file.size+300)/L.blockSize);
+  const t=K/fps;
+  $('est').innerHTML='Por cuadro <b>'+fmtBytes(L.blockSize)+'</b> · '+K+' cuadros · velocidad máx. <b>'+fmtBytes(L.blockSize*fps)+'/s</b><br>Tiempo estimado: <b>'+fmtTime(t*1.05)+'</b> si se leen todos, ~'+fmtTime(t*1.4)+' con pérdidas. (Sin contar la compresión.)';
+}
+
+$('startBtn').onclick=async()=>{
+  if(!file) return;
+  const b=$('startBtn'); b.disabled=true; b.textContent='Preparando…';
+  try{
+    const raw=new Uint8Array(await file.arrayBuffer());
+    const crc=PTC.crc32(raw);
+    let body=raw, z=0;
+    if(canZip && raw.length>256){ try{ const c=await through(raw,new CompressionStream('gzip')); if(c.length<raw.length*0.97){body=c;z=1;} }catch(_){} }
+    const L=curLayout();
+    const meta={n:file.name,t:file.type||'application/octet-stream',s:raw.length,z,c:crc,l:body.length};
+    const stream=PTC.buildStream(meta,body);
+    const blocks=PTC.splitStream(stream,L.blockSize);
+    const fileId=(Math.random()*0xFFFFFFFF)>>>0;
+    tx={L,blocks,K:blocks.length,fileId,seq:0,fps:+$('fps').value,t0:performance.now(),last:0,raf:0,z,comp:body.length,raw:raw.length};
+    await startTxScreen();
+  }catch(err){ $('est').textContent='No se pudo preparar el archivo: '+(err&&err.message||err); }
+  b.disabled=false; b.textContent='Transmitir a pantalla completa';
+};
+
+const off=document.createElement('canvas');
+async function startTxScreen(){
+  const box=$('tx'); box.hidden=false;
+  try{ await box.requestFullscreen?.({navigationUI:'hide'}); }catch(_){}
+  try{ await screen.orientation?.lock?.('landscape'); }catch(_){}
+  try{ wake=await navigator.wakeLock?.request('screen'); }catch(_){}
+  off.width=tx.L.W; off.height=tx.L.H;
+  showBar();
+  const step=1000/tx.fps;
+  const loop=t=>{
+    if(!tx) return;
+    if(t-tx.last>=step-4){ tx.last=t; drawFrame(); }
+    tx.raf=requestAnimationFrame(loop);
+  };
+  tx.raf=requestAnimationFrame(loop);
+}
+function drawFrame(){
+  const {L,blocks,K,fileId}=tx;
+  const idx=PTC.symbolIndices(fileId,K,tx.seq);
+  const sym=PTC.makeSymbol(blocks,L.blockSize,idx);
+  const pk=PTC.packFrame(L,fileId,K,tx.seq,sym);
+  const rgba=PTC.encodeFrame(L,pk);
+  off.getContext('2d').putImageData(new ImageData(rgba,L.W,L.H),0,0);
+  const cv=$('txc'), dpr=window.devicePixelRatio||1;
+  const cw=Math.round(cv.clientWidth*dpr), ch=Math.round(cv.clientHeight*dpr);
+  if(cv.width!==cw||cv.height!==ch){cv.width=cw;cv.height=ch;}
+  const ctx=cv.getContext('2d');
+  ctx.setTransform(1,0,0,1,0,0); ctx.fillStyle='#fff'; ctx.fillRect(0,0,cw,ch);
+  ctx.imageSmoothingEnabled=false;
+  const rot=ch>cw; // en vertical, girar el código para aprovechar la pantalla
+  const aw=rot?ch:cw, ah=rot?cw:ch, M=PTC.MARGIN;
+  const cp=Math.max(1,Math.floor(Math.min(aw/(L.W+2*M), ah/(L.H+2*M))));
+  const dw=L.W*cp, dh=L.H*cp;
+  if(rot){ ctx.translate(Math.round(cw/2),Math.round(ch/2)); ctx.rotate(Math.PI/2); ctx.drawImage(off,-Math.round(dw/2),-Math.round(dh/2),dw,dh); }
+  else ctx.drawImage(off,Math.round((cw-dw)/2),Math.round((ch-dh)/2),dw,dh);
+  tx.cp=cp;
+  tx.seq++;
+  if(!$('txBar').hidden) updBar();
+}
+let barTimer=0;
+function showBar(){ $('txBar').hidden=false; updBar(); clearTimeout(barTimer); barTimer=setTimeout(()=>{$('txBar').hidden=true;},4000); }
+function updBar(){
+  if(!tx) return;
+  const s=(performance.now()-tx.t0)/1000, pass1=Math.min(tx.seq,tx.K);
+  let t = tx.seq<tx.K ? 'Pasada principal '+pass1+'/'+tx.K : 'Reparación: cuadro '+(tx.seq-tx.K+1);
+  t += ' · '+fmtTime(s)+' · toca para ver esto';
+  if(tx.cp<3) t+=' · ⚠ celdas muy pequeñas: baja la densidad';
+  $('txInfo').textContent=t;
+}
+$('tx').addEventListener('pointerdown',e=>{ if(e.target.closest('#txBar')) return; showBar(); });
+$('txStop').onclick=stopTx;
+document.addEventListener('fullscreenchange',()=>{ if(!document.fullscreenElement && tx) stopTx(); });
+function stopTx(){
+  if(!tx) return;
+  cancelAnimationFrame(tx.raf); tx=null;
+  $('tx').hidden=true; $('txBar').hidden=true;
+  try{ if(document.fullscreenElement) document.exitFullscreen(); }catch(_){}
+  try{ screen.orientation?.unlock?.(); }catch(_){}
+  try{ wake&&wake.release(); }catch(_){} wake=null;
+}
+
+// ======================= RECEPTOR =======================
+let worker=null, busy=false, stream=null, scanning=false, rxState=null, rxWake=null;
+const grab=document.createElement('canvas'), gctx=grab.getContext('2d',{willReadFrequently:true});
+const WORKER_SRC = `
+let dec=null, fid=null, metaSent=false, cand=null, candN=0;
+onmessage = e => {
+  const m = e.data;
+  if (m.type === 'reset') { dec=null; fid=null; metaSent=false; cand=null; candN=0; return; }
+  const img = { data: new Uint8ClampedArray(m.buf), width: m.w, height: m.h };
+  const t0 = performance.now();
+  let r; try { r = PTC.decode(img); } catch (err) { r = { ok:false, reason:'error' }; }
+  const out = { type:'res', test: !!m.test, ok: r.ok, reason: r.reason, quad: r.quad || null, ms: performance.now() - t0, w: m.w, h: m.h };
+  const tr = [];
+  if (r.ok) {
+    out.mode = r.L.d + '/' + r.L.colors; out.fixed = r.fixed;
+    const u = PTC.unpackFrame(r.L, r.payload);
+    if (u && !m.test) {
+      if (fid !== u.fileId) {
+        if (!dec || dec.known === 0 || dec.done) { dec = new PTC.LTDecoder(u.K, u.B); fid = u.fileId; metaSent = false; out.newFile = true; }
+        else { if (cand === u.fileId) candN++; else { cand = u.fileId; candN = 1; }
+               if (candN >= 3) { dec = new PTC.LTDecoder(u.K, u.B); fid = u.fileId; metaSent = false; out.newFile = true; cand = null; } }
+      }
+      if (fid === u.fileId && !dec.done) {
+        out.useful = dec.add(u.fileId, u.seq, u.block);
+        if (!dec.done) dec.tryEliminate();
+        if (!metaSent && dec.blocks[0]) { out.meta = PTC.peekMeta(dec.blocks[0]); metaSent = !!out.meta; }
+        if (dec.done) { const j = PTC.joinStream(dec.blocks, dec.B); const d = j.data.slice(); out.done = { meta: j.meta, data: d.buffer }; tr.push(d.buffer); }
+      }
+      if (dec) { out.known = dec.known; out.prog = dec.done ? dec.K : dec.progress(); out.K = dec.K; out.B = dec.B; }
+    }
+  }
+  postMessage(out, tr);
+};`;
+function makeWorker(){
+  try{ const url=URL.createObjectURL(new Blob([codecSrc+'\n'+WORKER_SRC],{type:'text/javascript'})); const w=new Worker(url); w.onmessage=onResult; return w; }
+  catch(_){ return null; }
+}
+// alternativa sin Worker: misma lógica en el hilo principal
+function makeLocal(){
+  const ctx={postMessage:(m)=>setTimeout(()=>onResult({data:m}),0)};
+  const fn=new Function('postMessage','PTC',WORKER_SRC.replace('onmessage =','return'));
+  const handler=fn(ctx.postMessage,PTC);
+  return {postMessage:(m)=>setTimeout(()=>handler({data:m}),0)};
+}
+function getWorker(){ if(!worker) worker=makeWorker()||makeLocal(); return worker; }
+
+function resetRx(){
+  rxState={K:0,known:0,B:0,meta:null,okTimes:[],knownHist:[],done:null,blob:null};
+  getWorker().postMessage({type:'reset'});
+  $('rName').textContent='Esperando el nombre del archivo…';
+  $('rBar').style.width='0'; $('sPct').textContent='0 %'; $('sBlk').textContent='0/?'; $('sSpd').textContent='–'; $('sRate').textContent='0/s';
+  $('saveBtn').hidden=$('shareBtn').hidden=$('resetBtn').hidden=true;
+  msg('Pon este celular también en horizontal, apoyado y quieto, a unos 15–25 cm de la pantalla del otro.','');
+}
+function msg(t,c){const m=$('rMsg'); m.textContent=t; m.className='msg '+(c||'');}
+resetRx();
+
+$('camBtn').onclick=startCam;
+$('resetBtn').onclick=()=>{ resetRx(); startCam(); };
+async function startCam(){
+  if(!navigator.mediaDevices?.getUserMedia){ msg('Este navegador no permite usar la cámara aquí. Abre la app desde una dirección https:// en Chrome.','bad'); return; }
+  try{
+    stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080},frameRate:{ideal:30}}});
+  }catch(e){ msg('No se pudo abrir la cámara: '+(e.name==='NotAllowedError'?'permiso denegado; actívalo en los ajustes del navegador.':e.message),'bad'); return; }
+  const v=$('cam'); v.srcObject=stream; await v.play();
+  try{ const t=stream.getVideoTracks()[0], c=t.getCapabilities?.()||{}; const adv={}; if(c.focusMode?.includes('continuous')) adv.focusMode='continuous'; if(Object.keys(adv).length) await t.applyConstraints({advanced:[adv]}); }catch(_){}
+  try{ rxWake=await navigator.wakeLock?.request('screen'); }catch(_){}
+  $('camBox').hidden=false; $('camBtn').hidden=true; $('rxInfo').hidden=false;
+  scanning=true; busy=false; pump();
+}
+function stopCam(){
+  scanning=false;
+  if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; }
+  try{ rxWake&&rxWake.release(); }catch(_){} rxWake=null;
+  $('camBox').hidden=true; $('camBtn').hidden=false;
+}
+function pump(){
+  if(!scanning) return;
+  const v=$('cam');
+  if(!busy && v.readyState>=2 && v.videoWidth){
+    const w=v.videoWidth, h=v.videoHeight;
+    if(grab.width!==w||grab.height!==h){grab.width=w;grab.height=h;}
+    gctx.drawImage(v,0,0,w,h);
+    const id=gctx.getImageData(0,0,w,h);
+    busy=true;
+    getWorker().postMessage({type:'frame',buf:id.data.buffer,w,h},[id.data.buffer]);
+  }
+  requestAnimationFrame(pump);
+}
+const REASONS={marco:'No veo el marco completo: encuadra todo el código dentro de la imagen.',formato:'Veo el marco, pero no leo el formato: acércate un poco o espera a que enfoque.',errores:'Imagen borrosa o movida: deja el celular quieto (apóyalo) y revisa el enfoque.',crc:'Lectura dudosa: mantén el celular quieto.',error:'Error interno al leer el cuadro.'};
+function onResult(e){
+  const r=e.data;
+  if(r.test){ testResult(r); return; }
+  busy=false;
+  drawOverlay(r);
+  const now=performance.now(), st=rxState;
+  if(r.ok){ st.okTimes.push(now); }
+  st.okTimes=st.okTimes.filter(t=>now-t<2000);
+  $('sRate').textContent=(st.okTimes.length/2).toFixed(1)+'/s';
+  $('pill').textContent=r.ok?('Leyendo · '+['Baja','Media','Alta'][+r.mode[0]]+' · '+r.mode.split('/')[1]+' col.'):(r.reason==='marco'?'Buscando el marco…':'Ajustando…');
+  if(r.newFile){ st.meta=null; st.done=null; $('rName').textContent='Esperando el nombre del archivo…'; }
+  if(r.meta){ st.meta=r.meta; $('rName').textContent=r.meta.n+' · '+fmtBytes(r.meta.s); }
+  if(r.K){
+    st.K=r.K; st.known=r.prog; st.B=r.B;
+    st.knownHist.push([now,r.prog]); st.knownHist=st.knownHist.filter(x=>now-x[0]<4000);
+    const pct=Math.min(99,Math.floor(100*r.prog/r.K));
+    $('sPct').textContent=pct+' %'; $('sBlk').textContent=Math.min(r.prog,r.K)+'/'+r.K; $('rBar').style.width=pct+'%';
+    if(st.knownHist.length>1){ const a=st.knownHist[0], b=st.knownHist[st.knownHist.length-1]; const dt=(b[0]-a[0])/1000; if(dt>0.5) $('sSpd').textContent=fmtBytes(Math.max(0,(b[1]-a[1])*r.B/dt))+'/s'; }
+  }
+  if(r.done){ finish(r.done); return; }
+  if(r.ok){ msg(st.K? 'Recibiendo… no muevas el celular.' : 'Leyendo…','ok'); }
+  else msg(REASONS[r.reason]||'Buscando el código…','warn');
+}
+function drawOverlay(r){
+  const v=$('cam'), ov=$('ov'), dpr=window.devicePixelRatio||1;
+  const bw=ov.clientWidth, bh=ov.clientHeight;
+  if(ov.width!==Math.round(bw*dpr)){ov.width=Math.round(bw*dpr);ov.height=Math.round(bh*dpr);}
+  const ctx=ov.getContext('2d'); ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,bw,bh);
+  if(!r.quad||!r.w) return;
+  const sc=Math.min(bw/r.w,bh/r.h), ox=(bw-r.w*sc)/2, oy=(bh-r.h*sc)/2;
+  ctx.lineWidth=3; ctx.strokeStyle=r.ok?'#5fd27c':'#f0b445';
+  ctx.beginPath(); r.quad.forEach((p,i)=>{const x=ox+p[0]*sc,y=oy+p[1]*sc; i?ctx.lineTo(x,y):ctx.moveTo(x,y);}); ctx.closePath(); ctx.stroke();
+}
+async function finish(done){
+  stopCam();
+  const st=rxState, meta=done.meta;
+  try{
+    let u8=new Uint8Array(done.data);
+    if(meta.z) u8=await through(u8,new DecompressionStream('gzip'));
+    if(u8.length!==meta.s || PTC.crc32(u8)!==meta.c){ msg('El archivo llegó, pero la verificación falló. Pulsa “Recibir otro archivo” y repite.','bad'); $('resetBtn').hidden=false; return; }
+    st.blob=new File([u8],meta.n,{type:meta.t});
+    $('rName').textContent=meta.n+' · '+fmtBytes(meta.s);
+    $('sPct').textContent='100 %'; $('rBar').style.width='100%';
+    msg('Archivo completo y verificado ✔','ok');
+    $('saveBtn').hidden=false; $('resetBtn').hidden=false;
+    if(navigator.canShare?.({files:[st.blob]})) $('shareBtn').hidden=false;
+  }catch(e){ msg('Error al reconstruir el archivo: '+e.message,'bad'); $('resetBtn').hidden=false; }
+}
+$('saveBtn').onclick=()=>{ const b=rxState.blob; if(!b) return; const url=URL.createObjectURL(b), a=document.createElement('a'); a.href=url; a.download=b.name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),15000); };
+$('shareBtn').onclick=async()=>{ try{ await navigator.share({files:[rxState.blob],title:rxState.blob.name}); }catch(_){} };
+
+// prueba con una foto
+$('photoBtn').onclick=()=>$('photoIn').click();
+$('photoIn').onchange=async e=>{
+  const f=e.target.files[0]; if(!f) return; e.target.value='';
+  msg('Analizando la foto…','');
+  try{
+    const bmp=await createImageBitmap(f);
+    const sc=Math.min(1,2400/Math.max(bmp.width,bmp.height)), w=Math.round(bmp.width*sc), h=Math.round(bmp.height*sc);
+    const c=document.createElement('canvas'); c.width=w; c.height=h; const x=c.getContext('2d'); x.drawImage(bmp,0,0,w,h);
+    const id=x.getImageData(0,0,w,h);
+    getWorker().postMessage({type:'frame',test:true,buf:id.data.buffer,w,h},[id.data.buffer]);
+  }catch(err){ msg('No se pudo abrir la foto: '+err.message,'bad'); }
+};
+function testResult(r){
+  if(r.ok) msg('Foto leída correctamente ✔ (densidad '+['Baja','Media','Alta'][+r.mode[0]]+', '+r.mode.split('/')[1]+' colores, '+r.fixed+' bytes corregidos, '+Math.round(r.ms)+' ms).','ok');
+  else msg('La foto no se pudo leer: '+(REASONS[r.reason]||r.reason),'bad');
+}
+})();
+</script>
+</body>
+</html>
